@@ -7,6 +7,7 @@ module Excom
     def self.used(service_class, **opts)
       klass = opts[:class]
 
+      service_class.use(:status) unless service_class.using?(:status)
       service_class._sentry_class = klass if klass
     end
 

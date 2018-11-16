@@ -34,6 +34,7 @@ class MyErrors < Hash
 end
 
 class Save < Excom::Service
+  use :status
   use :sentry, delegate: [:threshold]
   use :assertions
   use :errors, errors_class: MyErrors

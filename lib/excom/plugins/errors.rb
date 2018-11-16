@@ -3,18 +3,27 @@ module Excom
     Plugins.register :errors, self,
       default_options: {errors_class: Hash, fail_if_present: true}
 
+    def self.used(service_class, *)
+      service_class.add_execution_prop(:errors)
+    end
+
     def execute(*)
       super
 
       if self.class.plugins[:errors].options[:fail_if_present] && !errors.empty?
-        failure! { :invalid }
+        failure!
       end
 
       self
     end
 
+    private def initialize(*)
+      super
+      state.errors = errors_class.new
+    end
+
     def errors
-      @errors ||= errors_class.new
+      state.errors
     end
 
     private def errors_class
@@ -22,13 +31,8 @@ module Excom
     end
 
     private def clear_execution_state!
-      if errors.respond_to?(:clear)
-        errors.clear
-      else
-        @errors = errors_class.new
-      end
-
       super
+      state.errors = errors_class.new
     end
   end
 end

@@ -10,6 +10,8 @@ module Excom
 
       @args = args
       @opts = opts
+
+      super
     end
 
     def initialize_clone(*)
@@ -72,6 +74,7 @@ module Excom
         service_class.send(:include, service_class::ArgMethods)
         service_class.args_list.replace args_list.dup
         service_class.opts_list.replace opts_list.dup
+        super
       end
 
       def arg_methods

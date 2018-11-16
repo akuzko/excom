@@ -22,6 +22,10 @@ module Excom
       extension
     end
 
+    def using?(name)
+      plugins.key?(name)
+    end
+
     def plugins
       @plugins ||= {}
     end

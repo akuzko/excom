@@ -2,11 +2,9 @@ module Excom
   module Plugins::Rescue
     Plugins.register :rescue, self
 
-    attr_reader :error
-
-    def initialize_clone(*)
-      remove_instance_variable('@error') if defined?(@error)
-      super
+    def self.used(service_class, *)
+      service_class.use(:status) unless service_class.using?(:status)
+      service_class.add_execution_prop :error
     end
 
     def execute(**opts)
@@ -14,10 +12,14 @@ module Excom
       super
     rescue StandardError => error
       clear_execution_state!
-      @error = error
-      @status = :error
+      failure!(:error)
+      state.error = error
       raise error unless rezcue
       self
+    end
+
+    def error
+      state.error
     end
 
     def error?

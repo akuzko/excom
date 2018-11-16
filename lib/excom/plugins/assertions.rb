@@ -2,12 +2,11 @@ module Excom
   module Plugins::Assertions
     Plugins.register :assertions, self
 
-    def assert(fail_with: self.fail_with)
+    def assert
       if yield
-        @success = true unless defined?(@success)
-        @status = :success unless defined?(@status)
+        success! unless state.has_success?
       else
-        failure!(fail_with)
+        failure!
       end
     end
   end

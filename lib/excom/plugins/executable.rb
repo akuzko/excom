@@ -1,14 +1,59 @@
+require 'ostruct'
+
 module Excom
   module Plugins::Executable
     Plugins.register :executable, self
 
-    Result = Struct.new(:success, :status, :result, :cause)
+    class State
+      def self.prop_names
+        @prop_names ||= []
+      end
 
-    attr_reader :status, :cause
+      def self.add_prop(*props)
+        prop_names.push(*props)
+        props.each{ |prop| def_prop_accessor(prop) }
+      end
+
+      def self.def_prop_accessor(name)
+        define_method(name) { @values[name] }
+        define_method("#{name}=") { |value| @values[name] = value }
+        define_method("has_#{name}?") { @values.key?(name) }
+      end
+
+      def initialize(values = {})
+        @values = values
+      end
+
+      def clear!
+        @values.clear
+      end
+
+      def prop_names
+        self.class.prop_names
+      end
+
+      def replace(other)
+        missing_props = prop_names - other.prop_names
+
+        unless missing_props.empty?
+          fail ArgumentError, "cannot accept execution state #{other} due to missing props: #{missing_props}"
+        end
+
+        prop_names.each do |prop|
+          @values[prop] = other.public_send(prop)
+        end
+      end
+    end
+
+    def self.used(service_class, *)
+      service_class.const_set(:State, Class.new(State))
+      service_class.add_execution_prop(:executed, :success, :result)
+    end
+
+    attr_reader :state
 
     def initialize(*)
-      @executed = false
-      super
+      @state = self.class::State.new(executed: false)
     end
 
     def initialize_clone(*)
@@ -18,18 +63,18 @@ module Excom
     def execute(*, &block)
       clear_execution_state!
       result = execute!(&block)
-      result_with(result) unless defined? @result
-      @executed = true
+      result_with(result) unless state.has_result?
+      state.executed = true
 
       self
     end
 
     def executed?
-      @executed
+      state.executed
     end
 
     def ~@
-      Result.new(success?, status, result, cause)
+      state
     end
 
     private def execute!
@@ -37,80 +82,82 @@ module Excom
     end
 
     private def clear_execution_state!
-      @executed = false
-      remove_instance_variable('@result'.freeze) if defined?(@result)
-      remove_instance_variable('@status'.freeze) if defined?(@status)
-      remove_instance_variable('@cause'.freeze) if defined?(@cause)
-      remove_instance_variable('@success'.freeze) if defined?(@success)
+      state.clear!
+      state.executed = false
     end
 
-    private def finish_with!(status, success:)
-      @success = success
-      @status = status
-      @cause = nil
-      @result = nil
+    private def success
+      success!
+      assign_successful_result(yield)
     end
 
-    private def success!(status = :success)
-      finish_with!(status, success: true)
+    private def failure
+      failure!
+      assign_failed_result(yield)
     end
 
-    private def success(status = :success)
-      success!(status)
-      @result = yield
+    private def success!
+      state.success = true
+      state.result = nil
     end
 
-    private def failure!(status = fail_with)
-      finish_with!(status, success: false)
+    private def failure!
+      state.success = false
+      state.result = nil
     end
 
-    private def failure(status = fail_with)
-      failure!(status)
-      @cause = yield
+    private def assign_successful_result(value)
+      state.result = value
+    end
+
+    private def assign_failed_result(value)
+      state.result = value
     end
 
     def result
-      return @result unless block_given?
+      return state.result unless block_given?
 
       result_with(yield)
     end
 
     private def result_with(obj)
-      if Result === obj
-        @success, @status, @result, @cause = obj.success, obj.status, obj.result, obj.cause
-        return @result
+      if State === obj
+        state.replace(obj)
       end
 
-      @success = !!obj
-      @status = @success ? :success : fail_with unless defined?(@status)
-      @result = obj
+      state.success = !!obj
+      if state.success
+        assign_successful_result(obj)
+      else
+        assign_failed_result(obj)
+      end
     end
 
     def success?
-      @success == true
+      state.success == true
     end
 
     def failure?
       !success?
     end
 
-    protected def fail_with
-      self.class.fail_with
-    end
-
     module ClassMethods
+      def inherited(klass)
+        klass.const_set(:State, Class.new(self::State))
+        klass::State.prop_names.replace(self::State.prop_names.dup)
+      end
+
+      def add_execution_prop(*props)
+        self::State.add_prop(*props)
+      end
+
       def call(*args)
         new(*args).execute
       end
+      alias_method :execute, :call
 
       def [](*args)
         call(*args).result
-      end
-
-      def fail_with(status = nil)
-        return @fail_with || :failure if status.nil?
-
-        @fail_with = status
       end
 
       def method_added(name)
